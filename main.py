@@ -85,6 +85,16 @@ def main():
     envs = make_vec_envs(args)
     obs, infos = envs.reset()
 
+    full_episode_data = []
+    episode_data = [None] * num_scenes
+    for e, info in enumerate(infos):
+        info["episode"]["positions"] = []
+        info["episode"]["goal_rewards"] = []
+        info["episode"]["explore_rewards"] = []
+        info["episode"]["policy_goals"] = []
+        info["episode"]["used_policy"] = []
+        episode_data[e] = info["episode"]
+
     torch.set_grad_enabled(False)
 
     # Initialize map variables:
@@ -289,6 +299,7 @@ def main():
 
         local_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
+        episode_data[e]["positions"].append(locs[e] + origins[e])
 
     global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
     global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
@@ -327,6 +338,8 @@ def main():
 
     for e in range(num_scenes):
         goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
+        episode_data[e]["policy_goals"].append((global_goals[e] + origins[e], g_value[e]))
+        episode_data[e]["used_policy"].append(True)
 
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
@@ -378,6 +391,12 @@ def main():
                     episode_dist[e].append(dist)
                     if len(episode_success[e]) == num_episodes:
                         finished[e] = 1
+                    episode_data[e]["success"] = success
+                    episode_data[e]["spl"] = spl
+                    episode_data[e]["distance_to_goal"] = dist 
+                    episode_data[e]["explored_area"] = full_map[e, 1].sum(1).sum(0)
+                    episode_data[e]["steps"] = infos[e]["timestep"]
+                    full_episode_data.append(episode_data[e])
                 else:
                     episode_success.append(success)
                     episode_spl.append(spl)
@@ -406,6 +425,8 @@ def main():
             loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
                             int(c * 100.0 / args.map_resolution)]
             local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
+            if args.eval and not finished[e]:
+                episode_data[e]["positions"].append(locs[e] + origins[e])
 
         # ------------------------------------------------------------------
 
@@ -464,6 +485,10 @@ def main():
                 [infos[env_idx]['g_reward'] for env_idx in range(num_scenes)])
             ).float().to(device)
             g_reward += args.intrinsic_rew_coeff * intrinsic_rews.detach()
+            for e in range(num_scenes):
+                if args.eval and not finished[e]:
+                    episode_data[e]["goal_rewards"].append(infos[e]["g_reward"])
+                    episode_data[e]["explore_rewards"].append(intrinsic_rews[e])
 
             g_process_rewards += g_reward.cpu().numpy()
             g_total_rewards = g_process_rewards * \
@@ -504,6 +529,9 @@ def main():
                              min(y, int(local_h - 1))]
                             for x, y in global_goals]
 
+            for e in range(num_scenes):
+                episode_data[e]["policy_goals"].append((global_goals[e] + origins[e], g_value[e]))
+
             g_reward = 0
             g_masks = torch.ones(num_scenes).float().to(device)
 
@@ -515,9 +543,10 @@ def main():
         goal_maps = [np.zeros((local_w, local_h)) for _ in range(num_scenes)]
 
         # If goal category not found in map, goal is the location sampled by
-        # policy (using co-occurences)
+        # policy
         for e in range(num_scenes):
             goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
+            episode_data[e]["used_policy"].append(True)
 
         # Else if goal category found in map, use all locations where prob of goal
         # obj existing is > 0 as the goal map for planner
@@ -529,6 +558,7 @@ def main():
                 cat_semantic_scores[cat_semantic_scores > 0] = 1.
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
+                episode_data[e]["used_policy"][-1] = False
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -581,6 +611,15 @@ def main():
 
         # ------------------------------------------------------------------
         # Logging
+        for e, info in enumerate(infos):
+            if info["time"] == 0:
+                info["episode"]["positions"] = []
+                info["episode"]["goal_rewards"] = []
+                info["episode"]["explore_rewards"] = []
+                info["episode"]["policy_goals"] = []
+                info["episode"]["used_policy"] = []
+                episode_data[e] = info["episode"]
+
         if step % args.log_interval == 0:
             end = time.time()
             time_elapsed = time.gmtime(end - start)
@@ -715,6 +754,10 @@ def main():
         with open('{}/{}_success_per_cat_pred_thr.json'.format(
                 dump_dir, args.split), 'w') as f:
             json.dump(success_per_category, f)
+
+        with open('{}/{}_episode_data.json'.format(
+                dump_dir, args.split), 'w') as f:
+            json.dump(full_episode_data, f)
 
 
 if __name__ == "__main__":

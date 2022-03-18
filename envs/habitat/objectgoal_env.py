@@ -98,6 +98,7 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         # Load episode info
         episode = self.eps_data[self.eps_data_idx]
+        self.info["episode_data"] = episode
         self.eps_data_idx += 1
         self.eps_data_idx = self.eps_data_idx % len(self.eps_data)
         pos = episode["start_position"]
@@ -142,6 +143,7 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         self.starting_distance = self.gt_planner.fmm_dist[self.starting_loc]\
             / 20.0 + self.object_boundary
+        self.info["episode_data"]["shortest_dist"] = self.starting_distance
         self.prev_distance = self.starting_distance
         self._env.sim.set_agent_state(pos, rot)
 
