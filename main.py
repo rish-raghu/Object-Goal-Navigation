@@ -7,6 +7,7 @@ import gym
 import torch.nn as nn
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
 
 from model import RL_Policy, Semantic_Mapping
 from utils.storage import GlobalRolloutStorage
@@ -300,7 +301,7 @@ def main():
 
         local_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-        episode_data[e]["positions"].append(([loc_r, loc_c] + origins[e, :2]).tolist())
+        episode_data[e]["positions"].append(([loc_r, loc_c] + lmb[e, [0,2]]).tolist())
 
     global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
     global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
@@ -339,7 +340,7 @@ def main():
 
     for e in range(num_scenes):
         goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-        episode_data[e]["policy_goals"].append(((global_goals[e] + origins[e, :2]).tolist(), g_value[e].item()))
+        episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
         episode_data[e]["used_policy"].append(True)
 
     planner_inputs = [{} for e in range(num_scenes)]
@@ -396,7 +397,17 @@ def main():
                     episode_data[e]["spl"] = spl
                     episode_data[e]["distance_to_goal"] = dist 
                     episode_data[e]["explored_area"] = full_map[e, 1].sum(1).sum(0).item()
-                    #print(episode_data[e])
+                    savmap = (full_map[e, 0, :, :] + 2*full_map[e,1,:,:]).cpu().numpy()
+                    plt.imshow(savmap)
+                    for step in range(1, len(episode_data[e]["positions"])):
+                        plt.plot([episode_data[e]["positions"][step-1][1], episode_data[e]["positions"][step][1]], \
+                            [episode_data[e]["positions"][step-1][0], episode_data[e]["positions"][step][0]], color="red")
+                    scene = episode_data[e]["scene_id"][16:-4]
+                    plt.savefig('{}/map_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']))
+                    plt.clf()
+                    np.save('{}/maparr_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']), savmap)
+                    #episode_data[e]["explored_area_map"] = full_map[e, 1].tolist()
+                    print(episode_data[e])
                     full_episode_data.append(episode_data[e])
                 else:
                     episode_success.append(success)
@@ -428,7 +439,7 @@ def main():
             local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
             if args.eval and infos[e]["time"] != 0:
                 #print(locs[e], origins[e])
-                episode_data[e]["positions"].append(([loc_r, loc_c] + origins[e, :2]).tolist())
+                episode_data[e]["positions"].append(([loc_r, loc_c] + lmb[e, [0,2]]).tolist())
 
         # ------------------------------------------------------------------
 
@@ -533,7 +544,7 @@ def main():
 
             for e in range(num_scenes):
                 if args.eval and infos[e]["time"] != 0:
-                    episode_data[e]["policy_goals"].append(((global_goals[e] + origins[e, :2]).tolist(), g_value[e].item()))
+                    episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
 
             g_reward = 0
             g_masks = torch.ones(num_scenes).float().to(device)
