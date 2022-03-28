@@ -91,6 +91,7 @@ def main():
     for e, info in enumerate(infos):
         cInfo = info.copy()
         cInfo["episode_data"]["positions"] = []
+        cInfo["episode_data"]["gt_positions"] = []
         cInfo["episode_data"]["goal_rewards"] = []
         cInfo["episode_data"]["explore_rewards"] = []
         cInfo["episode_data"]["policy_goals"] = []
@@ -301,7 +302,8 @@ def main():
 
         local_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-        episode_data[e]["positions"].append(([loc_r, loc_c] + lmb[e, [0,2]]).tolist())
+        episode_data[e]["positions"].append(([loc_r, loc_c] + lmb[e, [0,2]]).tolist() + [locs[e, 2]])
+        episode_data[e]["gt_positions"].append(infos[e]["gt_pos"])
 
     global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
     global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
@@ -439,7 +441,8 @@ def main():
             local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
             if args.eval and infos[e]["time"] != 0:
                 #print(locs[e], origins[e])
-                episode_data[e]["positions"].append(([loc_r, loc_c] + lmb[e, [0,2]]).tolist())
+                episode_data[e]["positions"].append(([loc_r, loc_c] + lmb[e, [0,2]]).tolist() + [locs[e, 2]])
+                episode_data[e]["gt_positions"].append(infos[e]["gt_pos"])
 
         # ------------------------------------------------------------------
 
@@ -630,6 +633,7 @@ def main():
             if info["time"] == 1:
                 cInfo = info.copy()
                 cInfo["episode_data"]["positions"] = []
+                cInfo["episode_data"]["gt_positions"] = []
                 cInfo["episode_data"]["goal_rewards"] = []
                 cInfo["episode_data"]["explore_rewards"] = []
                 cInfo["episode_data"]["policy_goals"] = []

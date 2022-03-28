@@ -148,8 +148,9 @@ class ObjectGoal_Env(habitat.RLEnv):
         self._env.sim.set_agent_state(pos, rot)
 
         # The following two should match approximately
-        # print(starting_loc)
-        # print(self.sim_continuous_to_sim_map(self.get_sim_location()))
+        #print(self.starting_loc)
+        #print(self.sim_continuous_to_sim_map(self.get_sim_location()))
+        self.info['gt_pos'] = self.sim_continuous_to_sim_map(self.get_sim_location())
 
         obs = self._env.sim.get_observations_at(pos, rot)
 

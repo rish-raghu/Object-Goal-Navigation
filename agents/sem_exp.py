@@ -130,6 +130,7 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
             self.info = info
 
             info['g_reward'] += rew
+            info['gt_pos'] = self.sim_continuous_to_sim_map(self.get_sim_location())
 
             return obs, rew, done, info
 
