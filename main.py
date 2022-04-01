@@ -302,8 +302,8 @@ def main():
 
         local_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-        episode_data[e]["positions"].append(([loc_r, loc_c] + lmb[e, [0,2]]).tolist() + [locs[e, 2]])
-        episode_data[e]["gt_positions"].append(infos[e]["gt_pos"])
+        episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
+        episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
 
     global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
     global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
@@ -397,19 +397,12 @@ def main():
                         finished[e] = 1
                     episode_data[e]["success"] = success
                     episode_data[e]["spl"] = spl
-                    episode_data[e]["distance_to_goal"] = dist 
+                    episode_data[e]["distance_to_goal"] = dist
+                    full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = local_map[e] 
                     episode_data[e]["explored_area"] = full_map[e, 1].sum(1).sum(0).item()
-                    #savmap = (full_map[e, 0, :, :] + 2*full_map[e,1,:,:]).cpu().numpy()
-                    #plt.imshow(savmap)
-                    #for step in range(1, len(episode_data[e]["positions"])):
-                    #    plt.plot([episode_data[e]["positions"][step-1][1], episode_data[e]["positions"][step][1]], \
-                    #        [episode_data[e]["positions"][step-1][0], episode_data[e]["positions"][step][0]], color="red")
-                    #scene = episode_data[e]["scene_id"][16:-4]
-                    #plt.savefig('{}/map_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']))
-                    #plt.clf()
-                    #np.save('{}/maparr_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']), savmap)
-                    #qepisode_data[e]["explored_area_map"] = full_map[e, 1].tolist()
-                    print(episode_data[e])
+                    scene = episode_data[e]["scene_id"][16:-4]
+                    np.save('{}/maparr_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']), full_map[e].cpu().numpy())
+                    #print(episode_data[e])
                     full_episode_data.append(episode_data[e])
                 else:
                     episode_success.append(success)
@@ -440,9 +433,8 @@ def main():
                             int(c * 100.0 / args.map_resolution)]
             local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
             if args.eval and infos[e]["time"] != 0:
-                #print(locs[e], origins[e])
-                episode_data[e]["positions"].append(([loc_r, loc_c] + lmb[e, [0,2]]).tolist() + [locs[e, 2]])
-                episode_data[e]["gt_positions"].append(infos[e]["gt_pos"])
+                episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
+                episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
 
         # ------------------------------------------------------------------
 
