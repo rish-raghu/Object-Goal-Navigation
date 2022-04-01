@@ -61,6 +61,9 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.map_obj_origin = None
         self.starting_loc = None
         self.starting_distance = None
+        if args.eval and args.shuffle:
+            self.shuffled_indices = np.arange(args.num_eval_episodes)
+            np.random.shuffle(self.shuffled_indices)
 
         # Episode tracking info
         self.curr_distance = None
@@ -97,7 +100,10 @@ class ObjectGoal_Env(habitat.RLEnv):
             self.last_scene_path = self.scene_path
 
         # Load episode info
-        episode = self.eps_data[self.eps_data_idx]
+        if self.args.shuffle:
+            episode = self.eps_data[self.shuffled_indices[self.eps_data_idx]]
+        else:
+            episode = self.eps_data[self.eps_data_idx]
         self.info["episode_data"] = episode
         self.eps_data_idx += 1
         self.eps_data_idx = self.eps_data_idx % len(self.eps_data)

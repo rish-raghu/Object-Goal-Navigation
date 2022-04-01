@@ -401,8 +401,9 @@ def main():
                     full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]] = local_map[e] 
                     episode_data[e]["explored_area"] = full_map[e, 1].sum(1).sum(0).item()
                     scene = episode_data[e]["scene_id"][16:-4]
-                    np.save('{}/maparr_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']), full_map[e].cpu().numpy())
-                    #print(episode_data[e])
+                    if args.save_maps:
+                        np.save('{}/maparr_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']), full_map[e].cpu().numpy())
+                    print(episode_data[e])
                     full_episode_data.append(episode_data[e])
                 else:
                     episode_success.append(success)
