@@ -1,5 +1,6 @@
 from collections import deque, defaultdict
 import os
+import sys
 import logging
 import time
 import json
@@ -26,6 +27,8 @@ def main():
 
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
+        # torch.backends.cudnn.benchmark = False
+        # torch.backends.cudnn.deterministic = True
 
     # Setup Logging
     log_dir = "{}/models/{}/".format(args.dump_location, args.exp_name)
@@ -294,7 +297,7 @@ def main():
     locs = local_pose.cpu().numpy()
     global_input = torch.zeros(num_scenes, ngc, local_w, local_h)
     global_orientation = torch.zeros(num_scenes, 1).long()
-
+    
     for e in range(num_scenes):
         r, c = locs[e, 1], locs[e, 0]
         loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
@@ -328,7 +331,7 @@ def main():
             g_rollouts.rec_states[0],
             g_rollouts.masks[0],
             extras=g_rollouts.extras[0],
-            deterministic=False
+            deterministic=args.deterministic_policy
         )
 
     # goals represented in global map downsized to local map size
@@ -403,8 +406,16 @@ def main():
                     scene = episode_data[e]["scene_id"][16:-4]
                     if args.save_maps:
                         np.save('{}/maparr_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']), full_map[e].cpu().numpy())
-                    print(episode_data[e])
                     full_episode_data.append(episode_data[e])
+
+                    cInfo = infos[e].copy()
+                    cInfo["episode_data"]["positions"] = []
+                    cInfo["episode_data"]["gt_positions"] = []
+                    cInfo["episode_data"]["goal_rewards"] = []
+                    cInfo["episode_data"]["explore_rewards"] = []
+                    cInfo["episode_data"]["policy_goals"] = []
+                    cInfo["episode_data"]["used_policy"] = []
+                    episode_data[e] = cInfo["episode_data"]
                 else:
                     episode_success.append(success)
                     episode_spl.append(spl)
@@ -433,7 +444,7 @@ def main():
             loc_r, loc_c = [int(r * 100.0 / args.map_resolution),
                             int(c * 100.0 / args.map_resolution)]
             local_map[e, 2:4, loc_r - 2:loc_r + 3, loc_c - 2:loc_c + 3] = 1.
-            if args.eval and infos[e]["time"] != 0:
+            if args.eval and not wait_env[e]:
                 episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
                 episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
 
@@ -495,7 +506,7 @@ def main():
             ).float().to(device)
             g_reward += args.intrinsic_rew_coeff * intrinsic_rews.detach()
             for e in range(num_scenes):
-                if args.eval and infos[e]["time"] != 0:
+                if args.eval and not wait_env[e]:
                     episode_data[e]["goal_rewards"].append(infos[e]["g_reward"])
                     episode_data[e]["explore_rewards"].append(intrinsic_rews[e].item())
 
@@ -528,7 +539,7 @@ def main():
                     g_rollouts.rec_states[g_step + 1],
                     g_rollouts.masks[g_step + 1],
                     extras=g_rollouts.extras[g_step + 1],
-                    deterministic=False
+                    deterministic=args.deterministic_policy
                 )
             cpu_actions = nn.Sigmoid()(g_action).cpu().numpy()
             global_goals = [[int(action[0] * local_w),
@@ -539,7 +550,7 @@ def main():
                             for x, y in global_goals]
 
             for e in range(num_scenes):
-                if args.eval and infos[e]["time"] != 0:
+                if args.eval and not wait_env[e]:
                     episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
 
             g_reward = 0
@@ -556,7 +567,7 @@ def main():
         # policy
         for e in range(num_scenes):
             goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-            if args.eval and infos[e]["time"] != 0:
+            if args.eval and not wait_env[e]:
                 episode_data[e]["used_policy"].append(True)
 
         # Else if goal category found in map, use all locations where prob of goal
@@ -569,7 +580,8 @@ def main():
                 cat_semantic_scores[cat_semantic_scores > 0] = 1.
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
-                episode_data[e]["used_policy"][-1] = False
+                if args.eval and not wait_env[e]:
+                    episode_data[e]["used_policy"][-1] = False
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -622,16 +634,6 @@ def main():
 
         # ------------------------------------------------------------------
         # Logging
-        for e, info in enumerate(infos):
-            if info["time"] == 1:
-                cInfo = info.copy()
-                cInfo["episode_data"]["positions"] = []
-                cInfo["episode_data"]["gt_positions"] = []
-                cInfo["episode_data"]["goal_rewards"] = []
-                cInfo["episode_data"]["explore_rewards"] = []
-                cInfo["episode_data"]["policy_goals"] = []
-                cInfo["episode_data"]["used_policy"] = []
-                episode_data[e] = cInfo["episode_data"]
 
         if len(full_episode_data) % 50 == 0:
             with open('{}/{}_episode_data.json'.format(
