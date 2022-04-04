@@ -144,7 +144,9 @@ def get_args():
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
     parser.add_argument('--deterministic_policy', action='store_true', default=False,
-                        help = 'make global policy outputs deterministic')
+                        help='make global policy outputs deterministic')
+    parser.add_argument('--sem_goal_thr', type=float, default=0,
+                        help='Threshold for target category in goal map')
 
     # Mapping
     parser.add_argument('--global_downscaling', type=int, default=2)

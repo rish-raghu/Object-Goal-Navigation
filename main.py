@@ -577,7 +577,7 @@ def main():
             if local_map[e, cn, :, :].sum() != 0.:
                 cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
                 cat_semantic_scores = cat_semantic_map
-                cat_semantic_scores[cat_semantic_scores > 0] = 1.
+                cat_semantic_scores[cat_semantic_scores > args.sem_goal_thr] = 1.
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
                 if args.eval and not wait_env[e]:
