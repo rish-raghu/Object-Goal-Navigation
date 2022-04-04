@@ -61,6 +61,8 @@ def get_args():
                         help='1: save visualization as images')
     parser.add_argument('--save_maps', action='store_true', default=False,
                         help='Save full map of each episode')
+    parser.add_argument('--episode_save_interval', type=int, default=50,
+                        help="Number of episodes after which to save episode logs")
 
     # Environment, dataset and episode specifications
     parser.add_argument('-efw', '--env_frame_width', type=int, default=640,
