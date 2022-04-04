@@ -100,6 +100,8 @@ def get_args():
                         help="max distance to goal during training in meters")
     parser.add_argument('--version', type=str, default="v1.1",
                         help="dataset version")
+    parser.add_argument('--use_semantic_sensor', action='store_true', default=False,
+                        help='Use simulator ground truth semantic annotations')
 
     # Model Hyperparameters
     parser.add_argument('--agent', type=str, default="sem_exp")
