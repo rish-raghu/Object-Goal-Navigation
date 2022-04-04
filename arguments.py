@@ -33,6 +33,8 @@ def get_args():
     parser.add_argument("--sem_gpu_id", type=int, default=-1,
                         help="""gpu id for semantic model,
                                 -1: same as sim gpu, -2: cpu""")
+    parser.add_argument("--shuffle", action='store_true', default=False,
+                        help='reorders episodes')
 
     # Logging, loading models, visualization
     parser.add_argument('--log_interval', type=int, default=10,
@@ -57,6 +59,10 @@ def get_args():
                                 (default: 0)""")
     parser.add_argument('--print_images', type=int, default=0,
                         help='1: save visualization as images')
+    parser.add_argument('--save_maps', action='store_true', default=False,
+                        help='Save full map of each episode')
+    parser.add_argument('--episode_save_interval', type=int, default=50,
+                        help="Number of episodes after which to save episode logs")
 
     # Environment, dataset and episode specifications
     parser.add_argument('-efw', '--env_frame_width', type=int, default=640,
@@ -94,6 +100,8 @@ def get_args():
                         help="max distance to goal during training in meters")
     parser.add_argument('--version', type=str, default="v1.1",
                         help="dataset version")
+    parser.add_argument('--use_semantic_sensor', action='store_true', default=False,
+                        help='Use simulator ground truth semantic annotations')
 
     # Model Hyperparameters
     parser.add_argument('--agent', type=str, default="sem_exp")
@@ -137,6 +145,10 @@ def get_args():
     parser.add_argument('--num_sem_categories', type=float, default=16)
     parser.add_argument('--sem_pred_prob_thr', type=float, default=0.9,
                         help="Semantic prediction confidence threshold")
+    parser.add_argument('--deterministic_policy', action='store_true', default=False,
+                        help='make global policy outputs deterministic')
+    parser.add_argument('--sem_goal_thr', type=float, default=0,
+                        help='Threshold for target category in goal map')
 
     # Mapping
     parser.add_argument('--global_downscaling', type=int, default=2)
