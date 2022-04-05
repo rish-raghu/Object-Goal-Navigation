@@ -574,10 +574,10 @@ def main():
         # obj existing is > 0 as the goal map for planner
         for e in range(num_scenes):
             cn = infos[e]['goal_cat_id'] + 4
-            if local_map[e, cn, :, :].sum() != 0.:
+            if (local_map[e, cn, :, :] > args.sem_goal_thr).any():
                 cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
-                cat_semantic_scores = cat_semantic_map
-                cat_semantic_scores[cat_semantic_scores > args.sem_goal_thr] = 1.
+                cat_semantic_scores = np.zeros_like(cat_semantic_map)
+                cat_semantic_scores[cat_semantic_map > args.sem_goal_thr] = 1.
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
                 if args.eval and not wait_env[e]:
