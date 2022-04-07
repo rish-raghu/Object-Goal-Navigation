@@ -89,17 +89,18 @@ def main():
     envs = make_vec_envs(args)
     obs, infos = envs.reset()
 
-    full_episode_data = []
-    episode_data = [None] * num_scenes
-    for e, info in enumerate(infos):
-        cInfo = info.copy()
-        cInfo["episode_data"]["positions"] = []
-        cInfo["episode_data"]["gt_positions"] = []
-        cInfo["episode_data"]["goal_rewards"] = []
-        cInfo["episode_data"]["explore_rewards"] = []
-        cInfo["episode_data"]["policy_goals"] = []
-        cInfo["episode_data"]["used_policy"] = []
-        episode_data[e] = cInfo["episode_data"]
+    if args.eval:
+        full_episode_data = []
+        episode_data = [None] * num_scenes
+        for e, info in enumerate(infos):
+            cInfo = info.copy()
+            cInfo["episode_data"]["positions"] = []
+            cInfo["episode_data"]["gt_positions"] = []
+            cInfo["episode_data"]["goal_rewards"] = []
+            cInfo["episode_data"]["explore_rewards"] = []
+            cInfo["episode_data"]["policy_goals"] = []
+            cInfo["episode_data"]["used_policy"] = []
+            episode_data[e] = cInfo["episode_data"]
 
     torch.set_grad_enabled(False)
 
@@ -305,8 +306,9 @@ def main():
 
         local_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-        episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
-        episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
+        if args.eval:
+            episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
+            episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
 
     global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
     global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
@@ -345,8 +347,9 @@ def main():
 
     for e in range(num_scenes):
         goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-        episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
-        episode_data[e]["used_policy"].append(True)
+        if args.eval:
+            episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
+            episode_data[e]["used_policy"].append(True)
 
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
@@ -635,7 +638,7 @@ def main():
         # ------------------------------------------------------------------
         # Logging
 
-        if len(full_episode_data) % args.episode_save_interval == 0:
+        if args.eval and len(full_episode_data) % args.episode_save_interval == 0:
             with open('{}/{}_episode_data.json'.format(
                 dump_dir, args.split), 'w') as f:
                     json.dump(full_episode_data, f)
