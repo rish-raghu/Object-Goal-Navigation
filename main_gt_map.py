@@ -9,6 +9,10 @@ import torch.nn as nn
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import bz2
+import _pickle as cPickle
+import math
+import cv2
 
 from model import RL_Policy, Semantic_Mapping
 from utils.storage import GlobalRolloutStorage
@@ -27,8 +31,6 @@ def main():
 
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
-        # torch.backends.cudnn.benchmark = False
-        # torch.backends.cudnn.deterministic = True
 
     # Setup Logging
     log_dir = "{}/models/{}/".format(args.dump_location, args.exp_name)
@@ -45,6 +47,9 @@ def main():
     print("Dumping at {}".format(log_dir))
     print(args)
     logging.info(args)
+
+    with bz2.BZ2File('data/datasets/objectnav/gibson/v1.1/val/val_info.pbz2', 'rb') as f:
+        dataset_info = cPickle.load(f)
 
     # Logging and loss variables
     num_scenes = args.num_processes
@@ -89,18 +94,17 @@ def main():
     envs = make_vec_envs(args)
     obs, infos = envs.reset()
 
-    if args.eval:
-        full_episode_data = []
-        episode_data = [None] * num_scenes
-        for e, info in enumerate(infos):
-            cInfo = info.copy()
-            cInfo["episode_data"]["positions"] = []
-            cInfo["episode_data"]["gt_positions"] = []
-            cInfo["episode_data"]["goal_rewards"] = []
-            cInfo["episode_data"]["explore_rewards"] = []
-            cInfo["episode_data"]["policy_goals"] = []
-            cInfo["episode_data"]["used_policy"] = []
-            episode_data[e] = cInfo["episode_data"]
+    full_episode_data = []
+    episode_data = [None] * num_scenes
+    for e, info in enumerate(infos):
+        cInfo = info.copy()
+        cInfo["episode_data"]["positions"] = []
+        cInfo["episode_data"]["gt_positions"] = []
+        cInfo["episode_data"]["goal_rewards"] = []
+        cInfo["episode_data"]["explore_rewards"] = []
+        cInfo["episode_data"]["policy_goals"] = []
+        cInfo["episode_data"]["used_policy"] = []
+        episode_data[e] = cInfo["episode_data"]
 
     torch.set_grad_enabled(False)
 
@@ -123,6 +127,8 @@ def main():
     full_map = torch.zeros(num_scenes, nc, full_w, full_h).float().to(device)
     local_map = torch.zeros(num_scenes, nc, local_w,
                             local_h).float().to(device)
+    full_gt_map = torch.zeros((num_scenes, args.num_sem_categories, full_w, full_h)).float().to(device)
+    local_gt_map = torch.zeros((num_scenes, args.num_sem_categories, local_w, local_h)).float().to(device)
 
     # Initial full and local pose
     full_pose = torch.zeros(num_scenes, 3).float().to(device)
@@ -193,6 +199,9 @@ def main():
                                     lmb[e, 2]:lmb[e, 3]]
             local_pose[e] = full_pose[e] - \
                 torch.from_numpy(origins[e]).to(device).float()
+            
+            local_gt_map[e].fill_(0.)
+            full_gt_map[e].fill_(0.)
 
     # identical to above, except for specific environment
     def init_map_and_pose_for_env(e):
@@ -220,6 +229,9 @@ def main():
         local_pose[e] = full_pose[e] - \
             torch.from_numpy(origins[e]).to(device).float()
 
+        local_gt_map[e].fill_(0.)
+        full_gt_map[e].fill_(0.)
+
     # reward is the newly explored area in a given step (in m^2)
     def update_intrinsic_rew(e):
         prev_explored_area = full_map[e, 1].sum(1).sum(0)
@@ -228,6 +240,18 @@ def main():
         curr_explored_area = full_map[e, 1].sum(1).sum(0)
         intrinsic_rews[e] = curr_explored_area - prev_explored_area
         intrinsic_rews[e] *= (args.map_resolution / 100.)**2  # to m^2
+
+    def gt_to_global_map(mp, episode):
+        global_start_rot = episode["positions"][0][2]
+        gt_start_pos = episode["gt_positions"][0]
+        gt_start_y, gt_start_x, gt_start_rot = gt_start_pos
+        gt_start_rot = math.radians(gt_start_rot - global_start_rot)
+        T1 = np.float32([[1, 0, -full_w//2], [0, 1, -full_h//2], [0, 0, 1]])
+        R = np.float32([[math.cos(gt_start_rot), -math.sin(gt_start_rot), 0], [math.sin(gt_start_rot), math.cos(gt_start_rot), 0], [0, 0, 1]])
+        T2 = np.float32([[1, 0, gt_start_x], [0, 1, gt_start_y], [0, 0, 1]])
+        transform = np.linalg.inv(T2 @ R @ T1)
+        rot_map = cv2.warpAffine(mp, transform[:2,:], (full_w, full_h))
+        return rot_map
 
     init_map_and_pose()
 
@@ -306,9 +330,18 @@ def main():
 
         local_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-        if args.eval:
-            episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
-            episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
+        episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
+        episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
+
+        gt_map_scene = dataset_info[episode_data[e]["scene_id"][16:-4]][episode_data[e]["floor_id"]]["sem_map"]
+        for i in range(full_gt_map.shape[1]):
+            full_gt_map[e, i, :, :] = torch.from_numpy(gt_to_global_map(gt_map_scene[i, :, :], episode_data[e]))
+        full_gt_map[e, 0, :, :] = 1 - full_gt_map[e, 0, :, :]
+        local_gt_map[e] = full_gt_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
+
+        explored = (local_map[e, 1, :, :] > 0)
+        #local_map[e, 0, explored] = local_gt_map[e, 0, explored]
+        local_map[e, 4:-1, explored] = local_gt_map[e, 1:, explored]
 
     global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
     global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
@@ -347,9 +380,8 @@ def main():
 
     for e in range(num_scenes):
         goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-        if args.eval:
-            episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
-            episode_data[e]["used_policy"].append(True)
+        episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
+        episode_data[e]["used_policy"].append(True)
 
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
@@ -451,6 +483,17 @@ def main():
                 episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
                 episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
 
+                if len(episode_data[e]["positions"])==1:
+                    gt_map_scene = dataset_info[episode_data[e]["scene_id"][16:-4]][episode_data[e]["floor_id"]]["sem_map"]
+                    for i in range(full_gt_map.shape[1]):
+                        full_gt_map[e, i, :, :] = torch.from_numpy(gt_to_global_map(gt_map_scene[i, :, :], episode_data[e]))
+                    full_gt_map[e, 0, :, :] = 1 - full_gt_map[e, 0, :, :]
+                    local_gt_map[e] = full_gt_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
+
+                explored = (local_map[e, 1, :, :] > 0)
+                #local_map[e, 0, explored] = local_gt_map[e, 0, explored]
+                local_map[e, 4:-1, explored] = local_gt_map[e, 1:, explored]
+
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -488,6 +531,7 @@ def main():
                                         lmb[e, 2]:lmb[e, 3]]
                 local_pose[e] = full_pose[e] - \
                     torch.from_numpy(origins[e]).to(device).float()
+                local_gt_map[e] = full_gt_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
 
             locs = local_pose.cpu().numpy()
             for e in range(num_scenes):
@@ -638,7 +682,7 @@ def main():
         # ------------------------------------------------------------------
         # Logging
 
-        if args.eval and len(full_episode_data) % args.episode_save_interval == 0:
+        if len(full_episode_data) % args.episode_save_interval == 0:
             with open('{}/{}_episode_data.json'.format(
                 dump_dir, args.split), 'w') as f:
                     json.dump(full_episode_data, f)
