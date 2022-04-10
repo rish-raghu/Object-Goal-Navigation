@@ -100,6 +100,7 @@ def main():
             cInfo["episode_data"]["explore_rewards"] = []
             cInfo["episode_data"]["policy_goals"] = []
             cInfo["episode_data"]["used_policy"] = []
+            cInfo["episode_data"]["steps_goal_found"] = 0
             episode_data[e] = cInfo["episode_data"]
 
     torch.set_grad_enabled(False)
