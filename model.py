@@ -58,6 +58,53 @@ class Goal_Oriented_Semantic_Policy(NNBase):
         return self.critic_linear(x).squeeze(-1), x, rnn_hxs
 
 
+class Local_Stop_Policy(NNBase):
+
+    def __init__(self, input_shape, recurrent=False, hidden_size=512):
+        super(Local_Stop_Policy, self).__init__(
+            recurrent, hidden_size, hidden_size)
+
+        out_size = int(input_shape[1] / 16.) * int(input_shape[2] / 16.)
+
+        self.main = nn.Sequential(
+            nn.MaxPool2d(2),
+            nn.Conv2d(1 + 4, 32, 3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(128, 64, 3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 32, 3, stride=1, padding=1),
+            nn.ReLU(),
+            Flatten()
+        )
+
+        self.linear1 = nn.Linear(out_size * 32 + 8, hidden_size)
+        self.linear2 = nn.Linear(hidden_size, 256)
+        self.critic_linear = nn.Linear(256, 1)
+        self.goal_emb = nn.Embedding(6, 8)
+        self.train()
+
+    def forward(self, inputs, rnn_hxs, masks, target_ids):
+        x = self.main(inputs)
+        goal_emb = self.goal_emb(target_ids)
+
+        x = torch.cat((x, goal_emb), 1)
+
+        x = nn.ReLU()(self.linear1(x))
+        if self.is_recurrent:
+            x, rnn_hxs = self._forward_gru(x, rnn_hxs, masks)
+
+        x = nn.ReLU()(self.linear2(x))
+
+        return self.critic_linear(x).squeeze(-1), x, rnn_hxs
+
+
 # https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail/blob/master/a2c_ppo_acktr/model.py#L15
 class RL_Policy(nn.Module):
 
@@ -71,6 +118,8 @@ class RL_Policy(nn.Module):
         if model_type == 1:
             self.network = Goal_Oriented_Semantic_Policy(
                 obs_shape, **base_kwargs)
+        elif model_type == 2:
+            self.network = Local_Stop_Policy(obs_shape, **base_kwargs)
         else:
             raise NotImplementedError
 
@@ -127,7 +176,6 @@ class RL_Policy(nn.Module):
         dist_entropy = dist.entropy().mean()
 
         return value, action_log_probs, dist_entropy, rnn_hxs
-
 
 class Semantic_Mapping(nn.Module):
 

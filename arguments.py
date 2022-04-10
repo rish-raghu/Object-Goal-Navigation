@@ -48,9 +48,16 @@ def get_args():
                         help='experiment name (default: exp1)')
     parser.add_argument('--save_periodic', type=int, default=500000,
                         help='Model save frequency in number of updates')
-    parser.add_argument('--load', type=str, default="0",
-                        help="""model path to load,
+    parser.add_argument('--load_global', type=str, default="0",
+                        help="""global policy model path to load,
                                 0 to not reload (default: 0)""")
+    parser.add_argument('--load_local', type=str, default="0",
+                        help="""local policy model path to load,
+                                0 to not reload (default: 0)""")
+    parser.add_argument('--train_global', action='store_true', default=False,
+                        help='Train the global policy')
+    parser.add_argument('--train_local', action='store_true', default=False,
+                        help='Train the local policy')                    
     parser.add_argument('-v', '--visualize', type=int, default=0,
                         help="""1: Render the observation and
                                    the predicted semantic map,
@@ -63,6 +70,8 @@ def get_args():
                         help='Save full map of each episode')
     parser.add_argument('--episode_save_interval', type=int, default=50,
                         help="Number of episodes after which to save episode logs")
+    parser.add_argument('--custom_eps', type=str, default=None,
+                        help="Path of incomplete episodes")
 
     # Environment, dataset and episode specifications
     parser.add_argument('-efw', '--env_frame_width', type=int, default=640,

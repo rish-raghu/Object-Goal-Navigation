@@ -5,6 +5,7 @@ import numpy as np
 import skimage.morphology
 from PIL import Image
 from torchvision import transforms
+import quaternion
 
 from envs.utils.fmm_planner import FMMPlanner
 from envs.habitat.objectgoal_env import ObjectGoal_Env
@@ -131,6 +132,12 @@ class Sem_Exp_Env_Agent(ObjectGoal_Env):
 
             info['g_reward'] += rew
             info['gt_pos'] = self.sim_continuous_to_sim_map(self.get_sim_location())
+            agent_state = self._env.sim.get_agent_state(0)
+            info['sim_pos'] = agent_state.position
+            rot = agent_state.rotation
+            rot = quaternion.as_rotation_vector(rot)
+            rot[1] = np.random.rand() * 2 * np.pi
+            info["sim_rot"] = rot
 
             return obs, rew, done, info
 

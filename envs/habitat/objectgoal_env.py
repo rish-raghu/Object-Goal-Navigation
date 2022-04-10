@@ -30,6 +30,16 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.episodes_dir = config_env.DATASET.EPISODES_DIR.format(
             split=self.split)
 
+        if args.custom_eps:
+            with open(args.custom_eps, 'r') as f:
+                episodes_all = json.load(f)
+                self.episodes_all = {}
+                for ep in episodes_all:
+                    if ep["scene"] in self.episodes_all:
+                        self.episodes_all[ep["scene"]].append(ep)
+                    else:
+                        self.episodes_all[ep["scene"]] = [ep]
+
         dataset_info_file = self.episodes_dir + \
             "{split}_info.pbz2".format(split=self.split)
         with bz2.BZ2File(dataset_info_file, 'rb') as f:
@@ -54,6 +64,7 @@ class ObjectGoal_Env(habitat.RLEnv):
         # Episode Dataset info
         self.eps_data = None
         self.eps_data_idx = None
+        self.gen_ep_idx = 1
         self.gt_planner = None
         self.object_boundary = None
         self.goal_idx = None
@@ -152,6 +163,80 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.info["episode_data"]["shortest_dist"] = self.starting_distance
         self.prev_distance = self.starting_distance
         self._env.sim.set_agent_state(pos, rot)
+        self.info["sim_pos"] = pos
+        self.info["sim_rot"] = rot
+
+        # The following two should match approximately
+        #print(self.starting_loc)
+        #print(self.sim_continuous_to_sim_map(self.get_sim_location()))
+        self.info['gt_pos'] = self.sim_continuous_to_sim_map(self.get_sim_location())
+
+        obs = self._env.sim.get_observations_at(pos, rot)
+
+        return obs
+
+    def load_incomplete_episode(self):
+
+        args = self.args
+        self.scene_path = self.habitat_env.sim.config.SCENE
+        scene_name = self.scene_path.split("/")[-1].split(".")[0]
+
+        if self.scene_path != self.last_scene_path:
+            print("Loading episodes from: {}".format(scene_name))
+            self.eps_data_idx = 0
+            self.last_scene_path = self.scene_path
+
+        episode = self.episodes_all[scene_name][self.eps_data_idx]
+        self.info["episode_data"] = episode
+        self.eps_data_idx += 1
+        self.eps_data_idx = self.eps_data_idx % len(self.episodes_all[scene_name])
+        pos = episode["sim_pos"]
+        rot = quaternion.from_rotation_vector(episode["sim_rot"])
+
+        goal_name = episode["goal_name"]
+        goal_idx = episode["goal_cat_id"]
+        floor_idx = episode["floor_idx"]
+
+        # Load scene info
+        scene_info = self.dataset_info[scene_name]
+        sem_map = scene_info[floor_idx]['sem_map']
+        map_obj_origin = scene_info[floor_idx]['origin']
+
+        # Setup ground truth planner
+        object_boundary = args.success_dist
+        map_resolution = args.map_resolution
+        selem = skimage.morphology.disk(2)
+        traversible = skimage.morphology.binary_dilation(
+            sem_map[0], selem) != True
+        traversible = 1 - traversible
+        planner = FMMPlanner(traversible)
+        selem = skimage.morphology.disk(
+            int(object_boundary * 100. / map_resolution))
+        goal_map = skimage.morphology.binary_dilation(
+            sem_map[goal_idx + 1], selem) != True
+        goal_map = 1 - goal_map
+        planner.set_multi_goal(goal_map)
+
+        # Get starting loc in GT map coordinates
+        x = -pos[2]
+        y = -pos[0]
+        min_x, min_y = map_obj_origin / 100.0
+        map_loc = int((-y - min_y) * 20.), int((-x - min_x) * 20.)
+
+        self.gt_planner = planner
+        self.starting_loc = map_loc
+        self.object_boundary = object_boundary
+        self.goal_idx = goal_idx
+        self.goal_name = goal_name
+        self.map_obj_origin = map_obj_origin
+
+        self.starting_distance = self.gt_planner.fmm_dist[self.starting_loc]\
+            / 20.0 + self.object_boundary
+        self.info["episode_data"]["shortest_dist"] = self.starting_distance
+        self.prev_distance = self.starting_distance
+        self._env.sim.set_agent_state(pos, rot)
+        self.info["sim_pos"] = pos
+        self.info["sim_rot"] = rot
 
         # The following two should match approximately
         #print(self.starting_loc)
@@ -263,6 +348,14 @@ class ObjectGoal_Env(habitat.RLEnv):
         self.prev_distance = self.starting_distance
 
         self._env.sim.set_agent_state(pos, rot)
+        self.info["sim_pos"] = pos
+        self.info["sim_rot"] = rot
+
+        self.info["episode_id"] = self.gen_ep_idx
+        self.gen_ep_idx += 1
+        self.info["scene"] = scene_name
+        self.info["floor_idx"] = floor_idx
+        self.info["goal_name"] = goal_name
 
         # The following two should match approximately
         # print(starting_loc)
@@ -333,7 +426,9 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         self.scene_path = self.habitat_env.sim.config.SCENE
 
-        if self.split == "val":
+        if args.custom_eps:
+            obs = self.load_incomplete_episode()
+        elif self.split == "val":
             obs = self.load_new_episode()
         else:
             obs = self.generate_new_episode()
