@@ -68,7 +68,7 @@ class Local_Stop_Policy(NNBase):
 
         self.main = nn.Sequential(
             nn.MaxPool2d(2),
-            nn.Conv2d(1 + 4, 32, 3, stride=1, padding=1),
+            nn.Conv2d(5, 32, 3, stride=1, padding=1),
             nn.ReLU(),
             nn.MaxPool2d(2),
             nn.Conv2d(32, 64, 3, stride=1, padding=1),
@@ -84,17 +84,19 @@ class Local_Stop_Policy(NNBase):
             Flatten()
         )
 
-        self.linear1 = nn.Linear(out_size * 32 + 8, hidden_size)
+        self.linear1 = nn.Linear(out_size * 32 + 8 * 2, hidden_size)
         self.linear2 = nn.Linear(hidden_size, 256)
         self.critic_linear = nn.Linear(256, 1)
+        self.orientation_emb = nn.Embedding(72, 8)
         self.goal_emb = nn.Embedding(6, 8)
         self.train()
 
-    def forward(self, inputs, rnn_hxs, masks, target_ids):
+    def forward(self, inputs, rnn_hxs, masks, extras):
         x = self.main(inputs)
-        goal_emb = self.goal_emb(target_ids)
+        orientation_emb = self.orientation_emb(extras[:, 0])
+        goal_emb = self.goal_emb(extras[:, 1])
 
-        x = torch.cat((x, goal_emb), 1)
+        x = torch.cat((x, orientation_emb, goal_emb), 1)
 
         x = nn.ReLU()(self.linear1(x))
         if self.is_recurrent:

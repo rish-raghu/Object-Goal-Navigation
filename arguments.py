@@ -135,7 +135,9 @@ def get_args():
     parser.add_argument('--max_grad_norm', type=float, default=0.5,
                         help='max norm of gradients (default: 0.5)')
     parser.add_argument('--num_global_steps', type=int, default=20,
-                        help='number of forward steps in A2C (default: 5)')
+                        help='number of forward steps in A2C for global policy(default: 5)')
+    parser.add_argument('--num_ppo_endpolicy_steps', type=int, default=2,
+                        help='number of forward steps in A2C for end policy')
     parser.add_argument('--ppo_epoch', type=int, default=4,
                         help='number of ppo epochs (default: 4)')
     parser.add_argument('--num_mini_batch', type=str, default="auto",
@@ -147,6 +149,9 @@ def get_args():
     parser.add_argument('--num_local_steps', type=int, default=25,
                         help="""Number of steps the local policy
                                 between each global step""")
+    parser.add_argument('--num_endpolicy_steps', type=int, default=20,
+                        help="""number of steps the local policy takes 
+                        between each end policy step""")
     parser.add_argument('--reward_coeff', type=float, default=0.1,
                         help="Object goal reward coefficient")
     parser.add_argument('--intrinsic_rew_coeff', type=float, default=0.02,

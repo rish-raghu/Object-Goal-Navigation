@@ -411,7 +411,7 @@ def main():
                     if args.save_maps:
                         np.save('{}/maparr_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']), full_map[e].cpu().numpy())
                     full_episode_data.append(episode_data[e])
-                    print("steps", episode_data[e]["steps_goal_found"])
+                    #print("steps", episode_data[e]["steps_goal_found"])
 
                     cInfo = infos[e].copy()
                     cInfo["episode_data"]["positions"] = []
