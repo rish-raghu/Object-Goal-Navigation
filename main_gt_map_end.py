@@ -9,6 +9,10 @@ import torch.nn as nn
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
+import bz2
+import _pickle as cPickle
+import math
+import cv2
 
 from model import RL_Policy, Semantic_Mapping
 from utils.storage import GlobalRolloutStorage
@@ -27,8 +31,6 @@ def main():
 
     if args.cuda:
         torch.cuda.manual_seed(args.seed)
-        # torch.backends.cudnn.benchmark = False
-        # torch.backends.cudnn.deterministic = True
 
     # Setup Logging
     log_dir = "{}/models/{}/".format(args.dump_location, args.exp_name)
@@ -45,6 +47,9 @@ def main():
     print("Dumping at {}".format(log_dir))
     print(args)
     logging.info(args)
+
+    with bz2.BZ2File('data/datasets/objectnav/gibson/v1.1/val/val_info.pbz2', 'rb') as f:
+        dataset_info = cPickle.load(f)
 
     # Logging and loss variables
     num_scenes = args.num_processes
@@ -89,18 +94,17 @@ def main():
     envs = make_vec_envs(args)
     obs, infos = envs.reset()
 
-    if args.eval:
-        full_episode_data = []
-        episode_data = [None] * num_scenes
-        for e, info in enumerate(infos):
-            cInfo = info.copy()
-            cInfo["episode_data"]["positions"] = []
-            cInfo["episode_data"]["gt_positions"] = []
-            cInfo["episode_data"]["goal_rewards"] = []
-            cInfo["episode_data"]["explore_rewards"] = []
-            cInfo["episode_data"]["policy_goals"] = []
-            cInfo["episode_data"]["used_policy"] = []
-            episode_data[e] = cInfo["episode_data"]
+    full_episode_data = []
+    episode_data = [None] * num_scenes
+    for e, info in enumerate(infos):
+        cInfo = info.copy()
+        cInfo["episode_data"]["positions"] = []
+        cInfo["episode_data"]["gt_positions"] = []
+        cInfo["episode_data"]["goal_rewards"] = []
+        cInfo["episode_data"]["explore_rewards"] = []
+        cInfo["episode_data"]["policy_goals"] = []
+        cInfo["episode_data"]["used_policy"] = []
+        episode_data[e] = cInfo["episode_data"]
 
     torch.set_grad_enabled(False)
 
@@ -123,6 +127,7 @@ def main():
     full_map = torch.zeros(num_scenes, nc, full_w, full_h).float().to(device)
     local_map = torch.zeros(num_scenes, nc, local_w,
                             local_h).float().to(device)
+    full_gt_target_map = np.zeros((num_scenes, full_w, full_h), dtype=float)
 
     # Initial full and local pose
     full_pose = torch.zeros(num_scenes, 3).float().to(device)
@@ -229,6 +234,18 @@ def main():
         intrinsic_rews[e] = curr_explored_area - prev_explored_area
         intrinsic_rews[e] *= (args.map_resolution / 100.)**2  # to m^2
 
+    def gt_to_global_map(mp, episode):
+        global_start_rot = episode["positions"][0][2]
+        gt_start_pos = episode["gt_positions"][0]
+        gt_start_y, gt_start_x, gt_start_rot = gt_start_pos
+        gt_start_rot = math.radians(gt_start_rot - global_start_rot)
+        T1 = np.float32([[1, 0, -full_w//2], [0, 1, -full_h//2], [0, 0, 1]])
+        R = np.float32([[math.cos(gt_start_rot), -math.sin(gt_start_rot), 0], [math.sin(gt_start_rot), math.cos(gt_start_rot), 0], [0, 0, 1]])
+        T2 = np.float32([[1, 0, gt_start_x], [0, 1, gt_start_y], [0, 0, 1]])
+        transform = np.linalg.inv(T2 @ R @ T1)
+        rot_map = cv2.warpAffine(mp, transform[:2,:], (full_w, full_h))
+        return rot_map
+
     init_map_and_pose()
 
     # Global policy observation space
@@ -306,9 +323,11 @@ def main():
 
         local_map[e, 2:4, loc_r - 1:loc_r + 2, loc_c - 1:loc_c + 2] = 1.
         global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
-        if args.eval:
-            episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
-            episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
+        episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
+        episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
+
+        gt_target_map = dataset_info[episode_data[e]["scene_id"][16:-4]][episode_data[e]["floor_id"]]["sem_map"][episode_data[e]["object_id"]+1]
+        full_gt_target_map[e, :, :] = gt_to_global_map(gt_target_map, episode_data[e])
 
     global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
     global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
@@ -347,9 +366,8 @@ def main():
 
     for e in range(num_scenes):
         goal_maps[e][global_goals[e][0], global_goals[e][1]] = 1
-        if args.eval:
-            episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
-            episode_data[e]["used_policy"].append(True)
+        episode_data[e]["policy_goals"].append(((global_goals[e] + lmb[e, [0,2]]).tolist(), g_value[e].item()))
+        episode_data[e]["used_policy"].append(True)
 
     planner_inputs = [{} for e in range(num_scenes)]
     for e, p_input in enumerate(planner_inputs):
@@ -410,7 +428,6 @@ def main():
                     if args.save_maps:
                         np.save('{}/maparr_{}_{}'.format(dump_dir, scene, episode_data[e]['episode_id']), full_map[e].cpu().numpy())
                     full_episode_data.append(episode_data[e])
-                    print("steps", episode_data[e]["steps_goal_found"])
 
                     cInfo = infos[e].copy()
                     cInfo["episode_data"]["positions"] = []
@@ -419,7 +436,6 @@ def main():
                     cInfo["episode_data"]["explore_rewards"] = []
                     cInfo["episode_data"]["policy_goals"] = []
                     cInfo["episode_data"]["used_policy"] = []
-                    cInfo["episode_data"]["steps_goal_found"] = 0
                     episode_data[e] = cInfo["episode_data"]
                 else:
                     episode_success.append(success)
@@ -452,6 +468,10 @@ def main():
             if args.eval and not wait_env[e]:
                 episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
                 episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
+
+                if len(episode_data[e]["positions"])==1:
+                    gt_target_map = dataset_info[episode_data[e]["scene_id"][16:-4]][episode_data[e]["floor_id"]]["sem_map"][episode_data[e]["object_id"]+1]
+                    full_gt_target_map[e, :, :] = gt_to_global_map(gt_target_map, episode_data[e])
 
         # ------------------------------------------------------------------
 
@@ -580,14 +600,15 @@ def main():
         for e in range(num_scenes):
             cn = infos[e]['goal_cat_id'] + 4
             if (local_map[e, cn, :, :] > args.sem_goal_thr).any():
-                cat_semantic_map = local_map[e, cn, :, :].cpu().numpy()
+                cat_semantic_map = full_gt_target_map[e, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
+                cat_semantic_map[local_map[e, 1, :, :].cpu().numpy() == 0] = 0
                 cat_semantic_scores = np.zeros_like(cat_semantic_map)
                 cat_semantic_scores[cat_semantic_map > args.sem_goal_thr] = 1.
+                if np.sum(cat_semantic_scores) == 0: continue
                 goal_maps[e] = cat_semantic_scores
                 found_goal[e] = 1
                 if args.eval and not wait_env[e]:
                     episode_data[e]["used_policy"][-1] = False
-                    episode_data[e]["steps_goal_found"] += 1
         # ------------------------------------------------------------------
 
         # ------------------------------------------------------------------
@@ -641,7 +662,7 @@ def main():
         # ------------------------------------------------------------------
         # Logging
 
-        if args.eval and len(full_episode_data) % args.episode_save_interval == 0:
+        if len(full_episode_data) % args.episode_save_interval == 0:
             with open('{}/{}_episode_data.json'.format(
                 dump_dir, args.split), 'w') as f:
                     json.dump(full_episode_data, f)
