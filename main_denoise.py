@@ -135,7 +135,8 @@ def main():
     full_map = torch.zeros(num_scenes, nc, full_w, full_h).float().to(device)
     local_map = torch.zeros(num_scenes, nc, local_w,
                             local_h).float().to(device)
-    full_gt_map = torch.zeros((num_scenes, args.num_sem_categories-1, full_w, full_h)).float().to(device)
+    if args.train_denoise:                       
+        full_gt_map = torch.zeros((num_scenes, args.num_sem_categories-1, full_w, full_h)).float().to(device)
 
     # Initial full and local pose
     full_pose = torch.zeros(num_scenes, 3).float().to(device)
@@ -206,7 +207,7 @@ def main():
                                     lmb[e, 2]:lmb[e, 3]]
             local_pose[e] = full_pose[e] - \
                 torch.from_numpy(origins[e]).to(device).float()
-            full_gt_map[e].fill_(0.)
+            if args.train_denoise: full_gt_map[e].fill_(0.)
 
     # identical to above, except for specific environment
     def init_map_and_pose_for_env(e):
@@ -233,7 +234,7 @@ def main():
         local_map[e] = full_map[e, :, lmb[e, 0]:lmb[e, 1], lmb[e, 2]:lmb[e, 3]]
         local_pose[e] = full_pose[e] - \
             torch.from_numpy(origins[e]).to(device).float()
-        full_gt_map[e].fill_(0.)
+        if args.train_denoise: full_gt_map[e].fill_(0.)
 
     # reward is the newly explored area in a given step (in m^2)
     def update_intrinsic_rew(e):
@@ -348,10 +349,11 @@ def main():
         if args.eval:
             episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
             episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
-
-        gt_map_scene = dataset_info[infos[e]["scene"]][infos[e]["floor_idx"]]["sem_map"][1:]
-        for i in range(1, full_gt_map.shape[1]):
-            full_gt_map[e, i-1, :, :] = torch.from_numpy(gt_to_global_map(gt_map_scene[i, :, :], int(locs[e, 2]), list(infos[e]["gt_pos"])))
+        
+        if args.train_denoise:
+            gt_map_scene = dataset_info[infos[e]["scene"]][infos[e]["floor_idx"]]["sem_map"][1:]
+            for i in range(1, full_gt_map.shape[1]):
+                full_gt_map[e, i-1, :, :] = torch.from_numpy(gt_to_global_map(gt_map_scene[i, :, :], int(locs[e, 2]), list(infos[e]["gt_pos"])))
 
     global_input[:, 0:4, :, :] = local_map[:, 0:4, :, :].detach()
     global_input[:, 4:8, :, :] = nn.MaxPool2d(args.global_downscaling)(
@@ -497,7 +499,7 @@ def main():
                 episode_data[e]["positions"].append([int(loc_r + lmb[e, 0]), int(loc_c + lmb[e, 2]), int(locs[e, 2])])
                 episode_data[e]["gt_positions"].append(list(infos[e]["gt_pos"]))
 
-            if new_ep[e] and not wait_env[e]:
+            if args.train_denoise and new_ep[e] and not wait_env[e]:
                 gt_map_scene = dataset_info[infos[e]["scene"]][infos[e]["floor_idx"]]["sem_map"][1:]
                 for i in range(1, full_gt_map.shape[1]):
                     full_gt_map[e, i-1, :, :] = torch.from_numpy(gt_to_global_map(gt_map_scene[i, :, :], int(locs[e, 2]), list(infos[e]["gt_pos"])))
@@ -541,6 +543,7 @@ def main():
                 local_pose[e] = full_pose[e] - \
                     torch.from_numpy(origins[e]).to(device).float()
 
+            full_map[:, 4:-1, :, :] = denoise_net(full_map[:, 4:-1, :, :])
             locs = local_pose.cpu().numpy()
             for e in range(num_scenes):
                 global_orientation[e] = int((locs[e, 2] + 180.0) / 5.)
