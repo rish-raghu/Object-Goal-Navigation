@@ -445,7 +445,6 @@ def main():
 
         for e, x in enumerate(done):
             if x:
-                print(infos)
                 spl = infos[e]['spl']
                 success = infos[e]['success']
                 dist = infos[e]['distance_to_goal']
@@ -717,7 +716,7 @@ def main():
                     l_rollouts.obs[-1],
                     l_rollouts.rec_states[-1],
                     l_rollouts.masks[-1],
-                    extras=g_rollouts.extras[-1]
+                    extras=l_rollouts.extras[-1]
                 ).detach()
                 
                 # backtrack from final returns to compute discounted returns at each step
@@ -784,7 +783,7 @@ def main():
                         np.mean(total_dist),
                         len(total_spl))
             else:
-                if len(episode_success) > 100:
+                if len(episode_success) > 1:
                     log += " ObjectNav succ/spl/dtg:"
                     log += " {:.3f}/{:.3f}/{:.3f}({:.0f}),".format(
                         np.mean(episode_success),
@@ -822,7 +821,7 @@ def main():
                 num_scenes:
             total_steps = step * num_scenes
             if not args.eval:
-                torch.save(g_policy.state_dict(),
+                torch.save(l_policy.state_dict(),
                            os.path.join(dump_dir,
                                         "periodic_{}.pth".format(total_steps)))
         # ------------------------------------------------------------------

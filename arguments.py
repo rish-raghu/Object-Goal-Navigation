@@ -149,7 +149,7 @@ def get_args():
     parser.add_argument('--num_local_steps', type=int, default=25,
                         help="""Number of steps the local policy
                                 between each global step""")
-    parser.add_argument('--num_endpolicy_steps', type=int, default=20,
+    parser.add_argument('--num_endpolicy_steps', type=int, default=3,
                         help="""number of steps the local policy takes 
                         between each end policy step""")
     parser.add_argument('--reward_coeff', type=float, default=0.1,
