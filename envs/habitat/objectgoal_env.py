@@ -99,13 +99,21 @@ class ObjectGoal_Env(habitat.RLEnv):
         scene_name = self.scene_path.split("/")[-1].split(".")[0]
 
         if self.scene_path != self.last_scene_path:
-            episodes_file = self.episodes_dir + \
-                "content/{}_episodes.json.gz".format(scene_name)
+            if not args.testset:
+                episodes_file = self.episodes_dir + \
+                    "content/{}_episodes.json.gz".format(scene_name)
 
-            print("Loading episodes from: {}".format(episodes_file))
-            with gzip.open(episodes_file, 'r') as f:
-                self.eps_data = json.loads(
-                    f.read().decode('utf-8'))["episodes"]
+                print("Loading episodes from: {}".format(episodes_file))
+                with gzip.open(episodes_file, 'r') as f:
+                    self.eps_data = json.loads(
+                        f.read().decode('utf-8'))["episodes"]
+            else:
+                episodes_file = self.episodes_dir + \
+                    "content/{}_test_episodes.json".format(scene_name)
+
+                print("Loading episodes from: {}".format(episodes_file))
+                with open(episodes_file, 'r') as f:
+                    self.eps_data = json.load(f)
 
             self.eps_data_idx = 0
             self.last_scene_path = self.scene_path
@@ -351,7 +359,7 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         self._env.sim.set_agent_state(pos, rot)
         self.info["sim_pos"] = pos
-        self.info["sim_rot"] = quaternion.as_rotation_vector(rot)
+        self.info["sim_rot"] = quaternion.as_float_array(rot)
 
         self.info["episode_id"] = self.gen_ep_idx
         self.gen_ep_idx += 1
@@ -429,7 +437,9 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         self.scene_path = self.habitat_env.sim.config.SCENE
 
-        if args.custom_eps:
+        if args.gen_episode:
+            obs = self.generate_new_episode()
+        elif args.custom_eps:
             obs = self.load_incomplete_episode()
         elif self.split == "val":
             obs = self.load_new_episode()

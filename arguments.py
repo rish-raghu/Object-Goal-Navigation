@@ -35,6 +35,9 @@ def get_args():
                                 -1: same as sim gpu, -2: cpu""")
     parser.add_argument("--shuffle", action='store_true', default=False,
                         help='reorders episodes')
+    parser.add_argument("--testset", action='store_true', default=False,
+                        help='run test set episodes')
+
 
     # Logging, loading models, visualization
     parser.add_argument('--log_interval', type=int, default=10,
@@ -77,6 +80,8 @@ def get_args():
                         help="Number of episodes after which to save episode logs")
     parser.add_argument('--custom_eps', type=str, default=None,
                         help="Path of incomplete episodes")
+    parser.add_argument('--gen_episode', action='store_true', default=False,
+                        help="Generate episodes")
 
     # Environment, dataset and episode specifications
     parser.add_argument('-efw', '--env_frame_width', type=int, default=640,

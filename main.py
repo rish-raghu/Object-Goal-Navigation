@@ -275,9 +275,9 @@ def main():
                                       g_action_space, g_policy.rec_state_size,
                                       es).to(device)
 
-    if args.load != "0":
-        print("Loading model {}".format(args.load))
-        state_dict = torch.load(args.load,
+    if args.load_global != "0":
+        print("Loading model {}".format(args.load_global))
+        state_dict = torch.load(args.load_global,
                                 map_location=lambda storage, loc: storage)
         g_policy.load_state_dict(state_dict)
 
