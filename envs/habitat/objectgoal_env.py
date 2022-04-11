@@ -349,7 +349,7 @@ class ObjectGoal_Env(habitat.RLEnv):
 
         self._env.sim.set_agent_state(pos, rot)
         self.info["sim_pos"] = pos
-        self.info["sim_rot"] = rot
+        self.info["sim_rot"] = quaternion.as_rotation_vector(rot)
 
         self.info["episode_id"] = self.gen_ep_idx
         self.gen_ep_idx += 1
