@@ -54,10 +54,15 @@ def get_args():
     parser.add_argument('--load_local', type=str, default="0",
                         help="""local policy model path to load,
                                 0 to not reload (default: 0)""")
+    parser.add_argument('--load_denoise', type=str, default="0",
+                        help="""denoising model path to load,
+                                0 to not reload (default: 0)""")
     parser.add_argument('--train_global', action='store_true', default=False,
                         help='Train the global policy')
     parser.add_argument('--train_local', action='store_true', default=False,
-                        help='Train the local policy')                    
+                        help='Train the local policy')         
+    parser.add_argument('--train_denoise', action='store_true', default=False,
+                        help='Train the map denoising network')           
     parser.add_argument('-v', '--visualize', type=int, default=0,
                         help="""1: Render the observation and
                                    the predicted semantic map,

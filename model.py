@@ -331,3 +331,20 @@ class Semantic_Mapping(nn.Module):
         map_pred, _ = torch.max(maps2, 1)
 
         return fp_map_pred, map_pred, pose_pred, current_poses
+
+class Semantic_Denoising(nn.Module):
+    def __init__(self):
+        super(Semantic_Denoising, self).__init__()
+        self.encode1 = nn.Conv2d(15, 32, 3, stride=2)
+        self.encode2 = nn.Conv2d(32, 32, 3, stride=2)
+        self.decode1 = nn.ConvTranspose2d(32, 32, 3, stride=2)
+        self.decode2 = nn.ConvTranspose2d(32, 15, 3, stride=2)
+
+    def forward(self, input):
+         encode1_out = self.encode1(input)
+         encode2_out = self.encode2(nn.functional.relu(encode1_out))
+         decode1_out = self.decode1(nn.functional.relu(encode2_out))
+         res_input = nn.functional.relu(decode1_out) + encode1_out
+         decode2_out = nn.functional.pad(self.decode2(res_input), (0, 1, 0, 1))
+         return decode2_out
+

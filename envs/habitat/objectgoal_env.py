@@ -165,6 +165,8 @@ class ObjectGoal_Env(habitat.RLEnv):
         self._env.sim.set_agent_state(pos, rot)
         self.info["sim_pos"] = pos
         self.info["sim_rot"] = rot
+        self.info["scene"] = scene_name
+        self.info["floor_idx"] = floor_idx
 
         # The following two should match approximately
         #print(self.starting_loc)
@@ -360,6 +362,7 @@ class ObjectGoal_Env(habitat.RLEnv):
         # The following two should match approximately
         # print(starting_loc)
         # print(self.sim_continuous_to_sim_map(self.get_sim_location()))
+        self.info['gt_pos'] = self.sim_continuous_to_sim_map(self.get_sim_location())
 
         obs = self._env.sim.get_observations_at(pos, rot)
 
