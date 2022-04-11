@@ -31,7 +31,7 @@ class ObjectGoal_Env(habitat.RLEnv):
             split=self.split)
 
         if args.custom_eps:
-            with open(args.custom_eps, 'r') as f:
+            with open("{}/train_episode_data.json".format(args.custom_eps), 'r') as f:
                 episodes_all = json.load(f)
                 self.episodes_all = {}
                 for ep in episodes_all:
